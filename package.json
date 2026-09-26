@@ -1,0 +1,27 @@
+{
+  "name": "load-stopper",
+  "version": "1.0.0",
+  "description": "Resource monitoring middleware to protect Node.js servers from overloading by automatically triggering a circuit breaker.",
+  "main": "./cjs/index.cjs",
+  "module": "./index.js",
+  "type": "module",
+  "types":"index.d.ts",
+  "exports": {
+    "import": "./index.js",
+    "require": "./cjs/index.cjs"
+  },
+  "keywords": [
+    "monitoring",
+    "express",
+    "middleware",
+    "cpu",
+    "ram",
+    "overload",
+    "circuit-breaker"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
