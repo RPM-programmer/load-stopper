@@ -3,17 +3,14 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-// Наша собственная палитра стилей для терминала
 const styles = {
     reset: '\x1b[0m',
     bold: '\x1b[1m',
-    // Цвета текста
     cyan: '\x1b[36m',
     yellow: '\x1b[33m',
     red: '\x1b[31m',
     green: '\x1b[32m',
     gray: '\x1b[90m',
-    // Цвета фона (для ярких акцентов)
     bgRed: '\x1b[41m',
     white: '\x1b[37m'
 };
@@ -23,19 +20,19 @@ let config = {
     cpuThreshold: 85,
     ramThreshold: 10,
     intervalMs: 5000,
-    logFilePath: path.join(process.cwd(), 'load-stopper.log')
+    retryAfterSecs: 30,
+    logFilePath: path.join(process.cwd(), 'load-stopper.log'),
+    multicastAddr: '239.1.2.3', 
+    multicastPort: 5554
 };
 
-// Наш собственный красивый логгер
 async function customLog({ level, msg, metrics }) {
     const timestamp = new Date().toISOString();
     const { cpu, freeRam } = metrics || {};
     
-    // 1. Форматируем чистый текст для записи в файл (без ломающих ANSI-кодов)
     const metricsStr = metrics ? ` [CPU: ${cpu}%, Free RAM: ${freeRam}%]` : '';
     const fileLogLine = `[${timestamp}] [${level.toUpperCase()}] ${msg}${metricsStr}\n`;
 
-    // 2. Форматируем стилизованный цветной текст для консоли разработчика
     let coloredLine = `${styles.gray}[${timestamp}]${styles.reset} `;
 
     switch (level) {
@@ -49,7 +46,6 @@ async function customLog({ level, msg, metrics }) {
             }
             break;
         case 'critical':
-            // Делаем критическую ошибку максимально заметной (белый текст на красном фоне + жирный)
             coloredLine += `${styles.bgRed}${styles.white}${styles.bold} [CRITICAL] ${styles.reset} ${styles.red}${msg}${styles.reset}`;
             if (metrics) {
                 coloredLine += `\n  └─> ${styles.bold}System Status:${styles.reset} CPU: ${styles.red}${styles.bold}${cpu}%${styles.reset} | Free RAM: ${styles.red}${styles.bold}${freeRam}%${styles.reset}`;
@@ -63,14 +59,12 @@ async function customLog({ level, msg, metrics }) {
             break;
     }
 
-    // Выводим стилизованную строку в консоль
     if (level === 'critical' || level === 'warn') {
         console.error(coloredLine);
     } else {
         console.log(coloredLine);
     }
 
-    // Записываем чистую строку на диск асинхронно
     try {
         await fs.appendFile(config.logFilePath, fileLogLine, 'utf8');
     } catch (err) {
@@ -133,22 +127,89 @@ async function checkMetrics() {
     startMeasure = endMeasure;
 }
 
+import dgram from 'node:dgram';
+
 export function init(userConfig = {}) {
     config = { ...config, ...userConfig };
     setInterval(checkMetrics, config.intervalMs);
     
-    customLog({
-        level: 'info',
-        msg: `Module initialized. Thresholds -> CPU: ${config.cpuThreshold}%, Free RAM: ${config.ramThreshold}%`
+    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    
+    socket.on('message', (msg) => {
+        try {
+            const data = JSON.parse(msg.toString());
+            if (data.senderPid === process.pid) return;
+
+            if (data.action === 'ACTIVATE_SHIELD') {
+                if (!isCriticalMode) {
+                    isCriticalMode = true;
+                    customLog({ 
+                        level: 'warn', 
+                        msg: `Cascade trigger received from PID ${data.senderPid}. Shielding routes pre-emptively.` 
+                    });
+                }
+            } else if (data.action === 'DEACTIVATE_SHIELD') {
+                if (isCriticalMode) {
+                    isCriticalMode = false;
+                    customLog({ 
+                        level: 'success', 
+                        msg: `Cluster stabilization signal received from PID ${data.senderPid}. Returning to normal.` 
+                    });
+                }
+            }
+        } catch (e) {}
+    });
+
+    socket.bind(config.multicastPort, '0.0.0.0', () => {
+        try {
+            socket.setMulticastLoopback(true);
+            
+            socket.addMembership(config.multicastAddr);
+        } catch (err) {
+            console.error(`${styles.red}[LoadStopper Internal Error] Multicast join failed: ${err.message}${styles.reset}`);
+        }
+    });
+
+    customLog({ 
+        level: 'info', 
+        msg: `Cluster networking engaged. Listening on multicast group ${config.multicastAddr}:${config.multicastPort} (PID: ${process.pid})` 
     });
 }
 
+function sendStateToPeers(actionName) {
+    const client = dgram.createSocket('udp4');
+    
+    const message = Buffer.from(JSON.stringify({ 
+        action: actionName,
+        senderPid: process.pid 
+    }));
+    
+    client.bind(0, '0.0.0.0', () => {
+        try {
+            client.setMulticastTTL(1); 
+            
+            client.send(message, config.multicastPort, config.multicastAddr, (err) => {
+                if (err) {
+                    console.error(`${styles.red}[LoadStopper Internal Error] Failed to broadcast cluster state: ${err.message}${styles.reset}`);
+                }
+                client.close();
+            });
+        } catch (e) {
+            client.close();
+        }
+    });
+}
+
+
+
+
 export function middleware(req, res, next) {
     if (isCriticalMode) {
+        const seconds = config.retryAfterSecs;
         res.status(503).set('Retry-After', '30').json({
             status: 'error',
             error: 'Service Unavailable',
-            message: 'The server is temporarily overloaded and protecting itself from crashing. Please try again later.'
+            message: `The server is temporarily overloaded. Shielding active. Please try again automatically in exactly ${seconds} seconds.`
         });
         return;
     }

@@ -5,7 +5,7 @@
   "main": "./cjs/index.cjs",
   "module": "./index.js",
   "type": "module",
-  "types":"index.d.ts",
+  "types": "index.d.ts",
   "exports": {
     "import": "./index.js",
     "require": "./cjs/index.cjs"
@@ -17,11 +17,13 @@
     "cpu",
     "ram",
     "overload",
-    "circuit-breaker"
+    "circuit-breaker",
+    "cluster",
+    "udp-multicast"
   ],
-  "author": "Your Name",
-  "license": "MIT",
-  "dependencies": {
-    "express": "^5.2.1"
+  "author": "prm-programmer",
+  "license": "ISC",
+  "peerDependencies": {
+    "express": "^4.0.0 || ^5.0.0"
   }
 }
