@@ -2,7 +2,7 @@
   "name": "load-stopper",
   "version": "1.1.0",
   "description": "Resource monitoring middleware to protect Node.js servers from overloading by automatically triggering a circuit breaker.",
-  "main": "./cjs/index.cjs",
+  "main": "./index.cjs",
   "module": "./index.js",
   "type": "module",
   "types": "index.d.ts",
@@ -22,8 +22,5 @@
     "udp-multicast"
   ],
   "author": "prm-programmer",
-  "license": "ISC",
-  "peerDependencies": {
-    "express": "^4.0.0 || ^5.0.0"
-  }
+  "license": "ISC"
 }
